@@ -94,9 +94,9 @@ void setup() {
     digitalWrite(LED_BUILTIN, LOW);
   }
 
-  Serial.println("\nConectado correctamente");
+  Serial.println("\nSuccessfully connected");
   con.begin(WOL_PORT);
-  Serial.printf("Esperando paquetes, mi IP %s, y puerto %d\n", WiFi.localIP().toString().c_str(), WOL_PORT);
+  Serial.printf("Listening for packets, client IP %s:%d\n", WiFi.localIP().toString().c_str(), WOL_PORT);
 }
 
 void loop() {
