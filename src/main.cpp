@@ -15,8 +15,8 @@
 #define WIFI_SSID               "ssidwifi"
 #define WIFI_PASSWORD           "superpass123"
 #define WOL_PORT                5009
-#define STATIC_CONNECTION       false
-#define CLIENT_ADDRESS          IPAddress(192, 168, 0, 150)
+#define STATIC_CONNECTION       true
+#define CLIENT_ADDRESS          IPAddress(192, 168, 0, 10)
 #define CLIENT_GATEWAY          IPAddress(192, 168, 0, 1)
 #define CLIENT_NETMASK          IPAddress(255, 255, 255, 0)
 #define TARGET_ADDRESS          IPAddress(255, 255, 255, 255)
@@ -59,16 +59,6 @@ bool isValid(char packet[]) {
   return true;
 }
 
-bool checkConnection() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Lost connection to the network, resetting...");
-    ESP.reset();
-    return false;
-  }
-
-  return true;
-}
-
 void setup() {
   Serial.begin(115200);
   Serial.println();
@@ -96,37 +86,47 @@ void setup() {
 
   Serial.println("\nSuccessfully connected");
   con.begin(WOL_PORT);
-  Serial.printf("Listening for packets, client IP %s:%d\n", WiFi.localIP().toString().c_str(), WOL_PORT);
+  Serial.printf("Listening for packets, listening on %s:%d\n", WiFi.localIP().toString().c_str(), WOL_PORT);
 }
 
 void loop() {
-  if (checkConnection()) {
-    int size = con.parsePacket();
-    if (size) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("The device has disconnected from the network, reconnecting...");
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    while (WiFi.status() !=  WL_CONNECTED) {
       digitalWrite(LED_BUILTIN, HIGH);
-      Serial.printf("Received packet from %s:%d\n", con.remoteIP().toString().c_str(), con.remotePort());
-      delay(250);
+      delay(500);
+      Serial.print(".");
       digitalWrite(LED_BUILTIN, LOW);
+    }
+    delay(500);
+  }
 
-      if (size == 102 || size == 108) {
-        char buffer[size];
-        con.read(buffer, size);
+  int size = con.parsePacket();
+  if (size) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    Serial.printf("Received packet from %s:%d\n", con.remoteIP().toString().c_str(), con.remotePort());
+    delay(250);
+    digitalWrite(LED_BUILTIN, LOW);
 
-        Serial.println("The packet received packet might be valid, going further...");
+    if (size == 102 || size == 108) {
+      char buffer[size];
+      con.read(buffer, size);
 
-        if (isValid(buffer)) {
-          Serial.println("The packet is valid, forwarding to the target...");
+      Serial.println("The packet received packet might be valid, going further...");
 
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(250);
-          digitalWrite(LED_BUILTIN, LOW);
+      if (isValid(buffer)) {
+        Serial.println("The packet is valid, forwarding to the target...");
 
-          con.beginPacket(TARGET_ADDRESS, TARGET_PORT);
-          con.write(buffer, size);
-          con.endPacket();
-        } else {
-          Serial.println("The packet received is not valid");
-        }
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(250);
+        digitalWrite(LED_BUILTIN, LOW);
+
+        con.beginPacket(TARGET_ADDRESS, TARGET_PORT);
+        con.write(buffer, size);
+        con.endPacket();
+      } else {
+        Serial.println("The packet received is not valid");
       }
     }
   }
