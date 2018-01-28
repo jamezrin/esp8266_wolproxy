@@ -1,6 +1,6 @@
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
+#include <settings.h>
 
 /*
 * Wake on Lan Packet
@@ -8,46 +8,63 @@
 * AA BB CC DD EE FF    x16   (Target MAC)   96 bytes
 * FF EE DD CC BB AA    x1    (SecureOn)     6 bytes
 * More info https://en.wikipedia.org/wiki/Wake-on-LAN
-* Total: 102 bytes without secureon, 108 bytes with SecureOn
+* Total: 102 bytes without SecureOn, 108 bytes with SecureOn
 */
-
-#define DEVICE_HOSTNAME         "WakeOnLan"
-#define WIFI_SSID               "ssidwifi"
-#define WIFI_PASSWORD           "superpass123"
-#define WOL_PORT                5009
-#define STATIC_CONNECTION       true
-#define CLIENT_ADDRESS          IPAddress(192, 168, 0, 10)
-#define CLIENT_GATEWAY          IPAddress(192, 168, 0, 1)
-#define CLIENT_NETMASK          IPAddress(255, 255, 255, 0)
-#define TARGET_ADDRESS          IPAddress(255, 255, 255, 255)
-#define TARGET_PORT             9
 
 WiFiUDP con;
 
-bool force_password = true;
-char password[6] = {0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6}; //Equivalent to A1:B2:C3:D4:E5:F6
+void setup() {
+  Serial.begin(115200);
+  Serial.println();
 
-bool isValid(char packet[]) {
+  if (staticConnection) {
+    WiFi.config(
+      address,
+      gateway,
+      netmask
+    );
+  }
+
+  WiFi.hostname(hostname);
+  WiFi.mode(WIFI_STA); //Client mode, otherwise it will work as an access point too
+
+  Serial.printf("Connecting to %s\n", ssid);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() !=  WL_CONNECTED) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(500);
+    Serial.print(".");
+    digitalWrite(LED_BUILTIN, LOW);
+  }
+
+  Serial.println("\nSuccessfully connected");
+  con.begin(port);
+  Serial.printf("Listening for packets, listening on %s:%d\n", WiFi.localIP().toString().c_str(), port);
+}
+
+bool check(char packet[], int size) {
   //Frame check
   for (int i = 0; i < 6; i++) {
     if (packet[i] != 0xFF)
-      return false;
+    return false;
   }
 
   //Payload check
   for (int i = 6; i < 12; i++) {
     for (int j = 1; j < 16; j++) {
       int pos = i + (6 * j);
-      if (packet[i] != packet[pos])
+      if (packet[i] != packet[pos]) {
         return false;
+      }
     }
   }
 
   //SecureOn check
-  if (force_password) {
-    if (sizeof(packet) == 108) {
+  if (enforcePassword) {
+    if (size >= 108) {
       for (int i = 0; i < 6; i++) {
-        if (packet[i + 102] != password[i]) {
+        if (packet[i + 102] != secureOn[i]) {
           return false;
         }
       }
@@ -59,75 +76,36 @@ bool isValid(char packet[]) {
   return true;
 }
 
-void setup() {
-  Serial.begin(115200);
-  Serial.println();
-
-  if (STATIC_CONNECTION) {
-    WiFi.config(
-      CLIENT_ADDRESS,
-      CLIENT_GATEWAY,
-      CLIENT_NETMASK
-    );
-  }
-
-  WiFi.hostname(DEVICE_HOSTNAME);
-  WiFi.mode(WIFI_STA); //Client mode, otherwise it will work as an access point too
-
-  Serial.printf("Connecting to %s\n", WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-  while (WiFi.status() !=  WL_CONNECTED) {
-    digitalWrite(LED_BUILTIN, HIGH);
-    delay(500);
-    Serial.print(".");
-    digitalWrite(LED_BUILTIN, LOW);
-  }
-
-  Serial.println("\nSuccessfully connected");
-  con.begin(WOL_PORT);
-  Serial.printf("Listening for packets, listening on %s:%d\n", WiFi.localIP().toString().c_str(), WOL_PORT);
-}
-
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("The device has disconnected from the network, reconnecting...");
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    while (WiFi.status() !=  WL_CONNECTED) {
-      digitalWrite(LED_BUILTIN, HIGH);
-      delay(500);
-      Serial.print(".");
-      digitalWrite(LED_BUILTIN, LOW);
-    }
-    delay(500);
-  }
+  int packetSize = con.parsePacket();
+  if (packetSize) {
+    Serial.printf("Received a packet of %d bytes from %s:%d\n",
+      packetSize,
+      con.remoteIP().toString().c_str(),
+      con.remotePort()
+    );
 
-  int size = con.parsePacket();
-  if (size) {
-    digitalWrite(LED_BUILTIN, HIGH);
-    Serial.printf("Received packet from %s:%d\n", con.remoteIP().toString().c_str(), con.remotePort());
-    delay(250);
-    digitalWrite(LED_BUILTIN, LOW);
-
-    if (size == 102 || size == 108) {
-      char buffer[size];
-      con.read(buffer, size);
+    if (packetSize >= 102) {
+      char packet[packetSize];
+      con.read(packet, packetSize);
 
       Serial.println("The packet received packet might be valid, going further...");
 
-      if (isValid(buffer)) {
+      if (check(packet, packetSize)) {
         Serial.println("The packet is valid, forwarding to the target...");
 
         digitalWrite(LED_BUILTIN, HIGH);
         delay(250);
         digitalWrite(LED_BUILTIN, LOW);
 
-        con.beginPacket(TARGET_ADDRESS, TARGET_PORT);
-        con.write(buffer, size);
+        con.beginPacket(targetAddress, targetPort);
+        con.write(packet, packetSize);
         con.endPacket();
       } else {
         Serial.println("The packet received is not valid");
       }
+    } else {
+      Serial.println("The packet received is too small");
     }
   }
 }
