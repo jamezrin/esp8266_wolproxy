@@ -15,21 +15,24 @@ WiFiUDP con;
 
 void setup() {
   Serial.begin(115200);
-  Serial.println();
+  Serial.setDebugOutput(true);
 
-  if (staticConnection) {
+  if (Settings::staticConnection) {
     WiFi.config(
-      address,
-      gateway,
-      netmask
+      Settings::address,
+      Settings::gateway,
+      Settings::netmask
     );
   }
 
-  WiFi.hostname(hostname);
+  WiFi.hostname(Settings::hostname);
   WiFi.mode(WIFI_STA); //Client mode, otherwise it will work as an access point too
 
-  Serial.printf("Connecting to %s\n", ssid);
-  WiFi.begin(ssid, password);
+  Serial.printf("Connecting to %s\n", Settings::ssid);
+  WiFi.begin(
+    Settings::ssid,
+    Settings::password
+  );
 
   while (WiFi.status() !=  WL_CONNECTED) {
     digitalWrite(LED_BUILTIN, HIGH);
@@ -39,8 +42,11 @@ void setup() {
   }
 
   Serial.println("\nSuccessfully connected");
-  con.begin(port);
-  Serial.printf("Listening for packets, listening on %s:%d\n", WiFi.localIP().toString().c_str(), port);
+  con.begin(Settings::port);
+  Serial.printf("Listening for packets on %s:%d\n",
+    WiFi.localIP().toString().c_str(),
+    Settings::port
+  );
 }
 
 bool check(char packet[], int size) {
@@ -61,10 +67,10 @@ bool check(char packet[], int size) {
   }
 
   //SecureOn check
-  if (enforcePassword) {
+  if (Settings::enforcePassword) {
     if (size >= 108) {
       for (int i = 0; i < 6; i++) {
-        if (packet[i + 102] != secureOn[i]) {
+        if (packet[i + 102] != Settings::secureOn[i]) {
           return false;
         }
       }
@@ -77,6 +83,10 @@ bool check(char packet[], int size) {
 }
 
 void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Device is not connected to wifi and does not reconnect");
+  }
+
   int packetSize = con.parsePacket();
   if (packetSize) {
     Serial.printf("Received a packet of %d bytes from %s:%d\n",
@@ -87,7 +97,10 @@ void loop() {
 
     if (packetSize >= 102) {
       char packet[packetSize];
-      con.read(packet, packetSize);
+      int len = con.read(packet, 255);
+      if (len > 0) {
+        packet[len] = 0;
+      }
 
       Serial.println("The packet received packet might be valid, going further...");
 
@@ -98,7 +111,11 @@ void loop() {
         delay(250);
         digitalWrite(LED_BUILTIN, LOW);
 
-        con.beginPacket(targetAddress, targetPort);
+        con.beginPacket(
+          Settings::targetAddress,
+          Settings::targetPort
+        );
+
         con.write(packet, packetSize);
         con.endPacket();
       } else {
@@ -107,5 +124,8 @@ void loop() {
     } else {
       Serial.println("The packet received is too small");
     }
+  } else {
+    Serial.print(".");
+    delay(1000);
   }
 }
