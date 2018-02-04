@@ -16,4 +16,9 @@ namespace Settings {
 
   static const char secureOn[6] = {0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6};
   static const bool enforcePassword = true;
+
+  static const char* ddnsHostname = "yourhost.sytes.net";
+  static const char* ddnsUsername = "username";
+  static const char* ddnsPassword = "password";
+  static const int ddnsInterval = 10000;
 };

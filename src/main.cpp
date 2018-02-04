@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFiUdp.h>
 #include <settings.h>
+#include <EasyDDNS.h>
 
 /*
 * Wake on Lan Packet
@@ -42,6 +43,14 @@ void setup() {
   }
 
   Serial.println("\nSuccessfully connected");
+
+  EasyDDNS.service("noip");
+  EasyDDNS.client(
+    Settings::ddnsHostname,
+    Settings::ddnsUsername,
+    Settings::ddnsPassword
+  );
+
   con.begin(Settings::port);
   Serial.printf("Listening for packets on %s:%d\n",
     WiFi.localIP().toString().c_str(),
@@ -86,6 +95,8 @@ void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Device is not connected to wifi and does not reconnect");
   }
+
+  EasyDDNS.update(Settings::ddnsInterval);
 
   int packetSize = con.parsePacket();
   if (packetSize) {
